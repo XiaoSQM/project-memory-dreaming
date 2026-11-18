@@ -1,0 +1,18 @@
+# Public release allowlist. Development material stays in the private repository.
+/*
+!/.gitignore
+!/README.md
+!/skills/
+!/tests/
+!/dist/
+/dist/*
+!/dist/project-memory-dreaming.zip
+
+# Generated files and local credentials
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+*.bundle

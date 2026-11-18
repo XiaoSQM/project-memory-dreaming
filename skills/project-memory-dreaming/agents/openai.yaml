@@ -1,0 +1,4 @@
+interface:
+  display_name: "Memory Workspace / 项目记忆空间"
+  short_description: "搭建项目长期记忆，整理会话经验并审核记忆更新"
+  default_prompt: "使用 $project-memory-dreaming 初始化当前项目。"
