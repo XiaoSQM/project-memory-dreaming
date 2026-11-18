@@ -17,13 +17,76 @@ Dreaming：选择新记录 -> 隔离整理 -> 人工审核 -> 发布或回滚
 
 它不需要额外的模型 API。当前 Agent 负责理解和整理，项目内的标准库工具负责初始化、检索边界、哈希并发检查、批次隔离、发布和回滚。
 
+### 安装与要求
+
+需要 Python 3.10+ 和 Git。下面的 `npx` 方式还需要 Node.js/npm；技能脚本只使用 Python 标准库，不需要额外模型 API。
+
+#### Codex
+
+在终端执行，安装到用户目录：
+
+```bash
+npx skills add XiaoSQM/project-memory-dreaming --global --agent codex
+```
+
+#### Claude Code
+
+```bash
+npx skills add XiaoSQM/project-memory-dreaming --global --agent claude-code
+```
+
+两种命令都使用 [Vercel Skills CLI](https://github.com/vercel-labs/skills)。只想在当前项目使用时，在目标项目根目录运行对应命令并去掉 `--global`。
+
+#### 不使用 Node.js：直接用 Git 安装
+
+下面的命令适用于 Windows PowerShell、macOS 和 Linux。按使用的 Agent 选择一条：
+
+```bash
+# Codex
+git clone https://github.com/XiaoSQM/project-memory-dreaming.git "$HOME/.agents/skills/project-memory-dreaming"
+
+# Claude Code
+git clone https://github.com/XiaoSQM/project-memory-dreaming.git "$HOME/.claude/skills/project-memory-dreaming"
+```
+
+| Agent | 用户级目录 | 项目级目录 |
+| --- | --- | --- |
+| Codex | `~/.agents/skills/project-memory-dreaming/` | `.agents/skills/project-memory-dreaming/` |
+| Claude Code | `~/.claude/skills/project-memory-dreaming/` | `.claude/skills/project-memory-dreaming/` |
+
+本仓库根目录就是完整技能，安装后应能在目标目录直接找到 `SKILL.md`、`agents/`、`assets/`、`references/` 和 `scripts/`。也可以在 GitHub 选择 **Code → Download ZIP**，将解压后的整个目录重命名为 `project-memory-dreaming`，放入上表对应位置。
+
+安装后回到实际要维护的项目，再执行下一节的初始化请求。若当前会话没有识别新技能，开始新会话再调用。一次安装可供多个项目分别初始化；安装本身不会创建后台任务或导入历史会话。
+
+<details>
+<summary>更新已有安装</summary>
+
+通过 Skills CLI 安装的版本：
+
+```bash
+npx skills update project-memory-dreaming --global
+```
+
+通过 Git 克隆的 Codex 版本：
+
+```bash
+git -C "$HOME/.agents/skills/project-memory-dreaming" pull --ff-only
+```
+
+Claude Code 将上面的 `.agents/skills` 换成 `.claude/skills`。项目级安装使用其对应目录。
+
+</details>
+
 ### 30 秒上手
 
-先把完整的 [`skills/project-memory-dreaming/`](skills/project-memory-dreaming/) 目录安装到技能目录，然后在目标项目发送一行：
+安装完成后，在实际要维护的项目中打开 Agent，发送对应请求：
 
-```text
-使用 $project-memory-dreaming 初始化当前项目。
-```
+| Agent | 第一次使用 |
+| --- | --- |
+| Codex | `使用 $project-memory-dreaming 初始化当前项目。` |
+| Claude Code | `/project-memory-dreaming 初始化当前项目。` |
+
+以下短调用使用 Codex 写法；Claude Code 可使用 `/project-memory-dreaming` 并接上相同任务。
 
 以后不必重复写保存语言、保留文件、按需读取和人工批准等规则，直接使用短调用：
 
@@ -59,15 +122,6 @@ Dreaming：选择新记录 -> 隔离整理 -> 人工审核 -> 发布或回滚
 ```
 
 日常入口只读取 `memory/README.md` 和与任务命中的段落；`progress.md` 是审计历史，不作为每次启动时的全文上下文。`memory/org/` 由用户维护，正式共享记忆通过预期哈希和锁保护。
-
-### 安装与要求
-
-| Agent | 用户级技能目录 | 项目级技能目录 |
-| --- | --- | --- |
-| Codex | `~/.agents/skills/project-memory-dreaming/` | `.agents/skills/project-memory-dreaming/` |
-| Claude Code | `~/.claude/skills/project-memory-dreaming/` | `.claude/skills/project-memory-dreaming/` |
-
-要求 Python 3.10 或更高版本。也可以直接下载 [完整技能包](dist/project-memory-dreaming.zip)，解压后保留 `SKILL.md`、`scripts/`、`assets/`、`references/` 和 `agents/`。技能安装一次后，可以在多个项目中分别初始化；初始化不会创建后台任务或自动导入历史会话。
 
 ### 可信边界
 
@@ -109,8 +163,8 @@ Agent 会读取已有 `AGENTS.md`、`AGENTS.override.md`、`CLAUDE.md`、项目�
 直接运行脚本时，在本仓库根目录执行：
 
 ```powershell
-python ".\skills\project-memory-dreaming\scripts\init_project.py" "D:\Projects\MyApp" --dry-run
-python ".\skills\project-memory-dreaming\scripts\init_project.py" "D:\Projects\MyApp" --name "MyApp"
+python ".\scripts\init_project.py" "D:\Projects\MyApp" --dry-run
+python ".\scripts\init_project.py" "D:\Projects\MyApp" --name "MyApp"
 ```
 
 ### 日常工作
@@ -177,7 +231,7 @@ Agent 选择当前项目中已获准读取、尚未处理的记录，建立隔�
 所有项目命令都支持 `--root`，且放在子命令之前：
 
 ```powershell
-python ".\skills\project-memory-dreaming\assets\project\tools\agent_memory.py" --root "D:\Projects\MyApp" status
+python tools/agent_memory.py --root "D:\Projects\MyApp" status
 ```
 
 `prepare` 只建立快照；语义分析、候选编辑和提案填写仍由当前 Agent 完成，工具不会自行调用模型。
@@ -190,20 +244,24 @@ python ".\skills\project-memory-dreaming\assets\project\tools\agent_memory.py" -
 
 ### 文档地图
 
-公开仓库只包含技能源码、行为测试、分发包和本页双语说明，以及必要的 Git 忽略配置。开发计划、验证记录、项目记忆和会话资料由私有开发仓库管理。
+公开仓库根目录直接提供完整技能，安装时保留下面的目录关系：
 
-- [`skills/project-memory-dreaming/SKILL.md`](skills/project-memory-dreaming/SKILL.md)：技能入口、默认行为和执行契约。
-- [`references/memory-protocol.md`](skills/project-memory-dreaming/references/memory-protocol.md)：日常检索、记录和受控写入。
-- [`references/dreaming.md`](skills/project-memory-dreaming/references/dreaming.md)：隔离批次、提案、审核、应用和恢复。
-- [`references/evaluation.md`](skills/project-memory-dreaming/references/evaluation.md)：固定评测与周期调度边界。
-- [`references/sources.md`](skills/project-memory-dreaming/references/sources.md)：原始指南、视频依据和实现取舍。
-- [`tests/test_memory_system.py`](tests/test_memory_system.py)：初始化、并发写入、Dreaming、回滚和评测测试。
-
-在仓库根目录运行测试：
-
-```powershell
-python -m unittest discover -s tests -v
+```text
+project-memory-dreaming/
+├── README.md       # 中英双语安装与使用说明
+├── SKILL.md        # Agent 技能入口
+├── agents/         # Codex 界面元数据
+├── assets/         # 初始化所需的项目模板
+├── references/     # 按需读取的工作流说明
+└── scripts/        # 项目初始化器
 ```
+
+- [`SKILL.md`](SKILL.md)：技能入口、默认行为和执行契约。
+- [`references/memory-protocol.md`](references/memory-protocol.md)：日常检索、记录和受控写入。
+- [`references/dreaming.md`](references/dreaming.md)：隔离批次、提案、审核、应用和恢复。
+- [`references/evaluation.md`](references/evaluation.md)：固定评测与周期调度边界。
+- [`references/sources.md`](references/sources.md)：原始指南、视频依据和实现取舍。
+
 
 ## English
 
@@ -218,13 +276,76 @@ Dreaming: select records -> curate in isolation -> review -> apply or roll back
 
 The current agent supplies the semantic analysis. The bundled standard-library tool enforces initialization, scoped reads, optimistic hashes, locks, isolated batches, publication checks, and rollback guards.
 
+### Installation and requirements
+
+Requires Python 3.10+ and Git. The `npx` option also requires Node.js/npm. The skill scripts use only the Python standard library and do not require another model API.
+
+#### Codex
+
+Run this in a terminal to install for your user:
+
+```bash
+npx skills add XiaoSQM/project-memory-dreaming --global --agent codex
+```
+
+#### Claude Code
+
+```bash
+npx skills add XiaoSQM/project-memory-dreaming --global --agent claude-code
+```
+
+Both commands use the [Vercel Skills CLI](https://github.com/vercel-labs/skills). To install only for one project, run the corresponding command from that project root and omit `--global`.
+
+#### Without Node.js: install with Git
+
+These commands work in Windows PowerShell, macOS, and Linux. Choose the command for your agent:
+
+```bash
+# Codex
+git clone https://github.com/XiaoSQM/project-memory-dreaming.git "$HOME/.agents/skills/project-memory-dreaming"
+
+# Claude Code
+git clone https://github.com/XiaoSQM/project-memory-dreaming.git "$HOME/.claude/skills/project-memory-dreaming"
+```
+
+| Agent | User-level directory | Project-level directory |
+| --- | --- | --- |
+| Codex | `~/.agents/skills/project-memory-dreaming/` | `.agents/skills/project-memory-dreaming/` |
+| Claude Code | `~/.claude/skills/project-memory-dreaming/` | `.claude/skills/project-memory-dreaming/` |
+
+The repository root is the complete skill. Your installed directory should directly contain `SKILL.md`, `agents/`, `assets/`, `references/`, and `scripts/`. Alternatively, select **Code → Download ZIP** on GitHub, rename the extracted folder to `project-memory-dreaming`, and place the entire folder in the appropriate directory above.
+
+After installation, return to the project you want to maintain and use the initialization request below. If the current session does not discover the skill, start a new session. One installed skill can initialize multiple projects; installation does not start a background job or import historical conversations.
+
+<details>
+<summary>Update an existing installation</summary>
+
+For a Skills CLI installation:
+
+```bash
+npx skills update project-memory-dreaming --global
+```
+
+For a Codex installation cloned with Git:
+
+```bash
+git -C "$HOME/.agents/skills/project-memory-dreaming" pull --ff-only
+```
+
+For Claude Code, replace `.agents/skills` with `.claude/skills`. Use the corresponding project directory for a project-level installation.
+
+</details>
+
 ### Quick start
 
-Install the complete [`skills/project-memory-dreaming/`](skills/project-memory-dreaming/) directory, then send one line in the target project:
+After installation, open your agent in the project you want to maintain and send:
 
-```text
-Use $project-memory-dreaming to initialize this project.
-```
+| Agent | First use |
+| --- | --- |
+| Codex | `Use $project-memory-dreaming to initialize this project.` |
+| Claude Code | `/project-memory-dreaming initialize this project.` |
+
+The short requests below use Codex syntax. In Claude Code, use `/project-memory-dreaming` followed by the same task.
 
 The defaults are already part of the skill, so users do not need to repeat preservation, English memory, scoped reads, verification, or approval rules:
 
@@ -238,15 +359,6 @@ The defaults are already part of the skill, so users do not need to repeat prese
 | Inspect rollback | `Use $project-memory-dreaming to show the rollback impact for <run-id>.` |
 
 The initialization, daily-work, Dreaming, CLI, scheduling, and verification sections below are the complete guide.
-
-### Installation and requirements
-
-| Agent | User-level skill directory | Project-level skill directory |
-| --- | --- | --- |
-| Codex | `~/.agents/skills/project-memory-dreaming/` | `.agents/skills/project-memory-dreaming/` |
-| Claude Code | `~/.claude/skills/project-memory-dreaming/` | `.claude/skills/project-memory-dreaming/` |
-
-Python 3.10 or newer is required. The [complete package](dist/project-memory-dreaming.zip) contains the `SKILL.md`, scripts, project assets, references, and UI metadata needed for installation. One installed skill can initialize multiple projects; initialization does not start a background job or import all historical sessions.
 
 ### Project layout and read model
 
@@ -289,8 +401,8 @@ The agent reads `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, project document
 Run the script directly from this repository with:
 
 ```powershell
-python ".\skills\project-memory-dreaming\scripts\init_project.py" "D:\Projects\MyApp" --dry-run
-python ".\skills\project-memory-dreaming\scripts\init_project.py" "D:\Projects\MyApp" --name "MyApp"
+python ".\scripts\init_project.py" "D:\Projects\MyApp" --dry-run
+python ".\scripts\init_project.py" "D:\Projects\MyApp" --name "MyApp"
 ```
 
 #### Resume a task
@@ -349,7 +461,7 @@ Run these commands from an initialized project root:
 All project commands accept `--root` before the subcommand:
 
 ```powershell
-python ".\skills\project-memory-dreaming\assets\project\tools\agent_memory.py" --root "D:\Projects\MyApp" status
+python tools/agent_memory.py --root "D:\Projects\MyApp" status
 ```
 
 `prepare` creates a snapshot only. Semantic analysis, candidate edits, and proposal completion remain the current agent's work; the tool does not call a model.
@@ -373,17 +485,20 @@ This result is limited to Windows, Python 3.12.10, the default `cp936/GBK` condi
 
 ### Documentation map
 
-The public repository contains skill source, behavior tests, the distribution package, this bilingual guide, and the necessary Git ignore configuration. Development plans, validation records, project memory, and session material are maintained in the private development repository.
+The repository root is the installable skill. Preserve this directory structure when installing:
 
-- [`skills/project-memory-dreaming/SKILL.md`](skills/project-memory-dreaming/SKILL.md): entrypoint, defaults, and execution contract.
-- [`references/memory-protocol.md`](skills/project-memory-dreaming/references/memory-protocol.md): daily retrieval, capture, and guarded writes.
-- [`references/dreaming.md`](skills/project-memory-dreaming/references/dreaming.md): isolated batches, proposals, review, apply, and recovery.
-- [`references/evaluation.md`](skills/project-memory-dreaming/references/evaluation.md): fixed evaluation and scheduling boundaries.
-- [`references/sources.md`](skills/project-memory-dreaming/references/sources.md): source material and implementation mapping.
-- [`tests/test_memory_system.py`](tests/test_memory_system.py): behavior tests for initialization, writes, Dreaming, rollback, and evaluation.
-
-Run the behavior tests from the repository root:
-
-```powershell
-python -m unittest discover -s tests -v
+```text
+project-memory-dreaming/
+├── README.md       # Bilingual installation and usage guide
+├── SKILL.md        # Agent skill entrypoint
+├── agents/         # Codex UI metadata
+├── assets/         # Project templates for initialization
+├── references/     # Workflow details loaded as needed
+└── scripts/        # Project initializer
 ```
+
+- [`SKILL.md`](SKILL.md): entrypoint, defaults, and execution contract.
+- [`references/memory-protocol.md`](references/memory-protocol.md): daily retrieval, capture, and guarded writes.
+- [`references/dreaming.md`](references/dreaming.md): isolated batches, proposals, review, apply, and recovery.
+- [`references/evaluation.md`](references/evaluation.md): fixed evaluation and scheduling boundaries.
+- [`references/sources.md`](references/sources.md): source material and implementation mapping.

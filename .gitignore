@@ -1,12 +1,12 @@
-# Public release allowlist. Development material stays in the private repository.
+# Single-skill public release: publish only the installable skill and homepage.
 /*
 !/.gitignore
 !/README.md
-!/skills/
-!/tests/
-!/dist/
-/dist/*
-!/dist/project-memory-dreaming.zip
+!/SKILL.md
+!/agents/
+!/assets/
+!/references/
+!/scripts/
 
 # Generated files and local credentials
 __pycache__/
