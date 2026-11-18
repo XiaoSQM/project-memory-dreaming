@@ -1,8 +1,248 @@
 # Project Memory Dreaming
 
-**为 Codex 和 Claude Code 项目建立可检索、可审核、可回滚的长期记忆。**
+**Searchable project memory for Codex and Claude Code, with reviewable updates and rollback.**
 
-[简体中文](#简体中文) | [English](#english)
+[English](#english) | [简体中文](#简体中文)
+
+## English
+
+### What it solves
+
+`project-memory-dreaming` gives Codex and Claude Code a durable, searchable project memory without requiring another model API. The daily loop recalls task-relevant notes and saves one handoff summary. A separate Dreaming loop turns new session records into isolated, reviewable candidates before anything reaches shared memory.
+
+```text
+Daily: recall relevant notes -> do the work -> capture one handoff
+Dreaming: select records -> curate in isolation -> review -> apply or roll back
+```
+
+The current agent supplies the semantic analysis. The bundled standard-library tool enforces initialization, scoped reads, optimistic hashes, locks, isolated batches, publication checks, and rollback guards.
+
+### Installation and requirements
+
+Requires Python 3.10+ and Git. The `npx` option also requires Node.js/npm. The skill scripts use only the Python standard library and do not require another model API.
+
+#### Codex
+
+Run this in a terminal to install for your user:
+
+```bash
+npx skills add XiaoSQM/project-memory-dreaming --global --agent codex
+```
+
+#### Claude Code
+
+```bash
+npx skills add XiaoSQM/project-memory-dreaming --global --agent claude-code
+```
+
+Both commands use the [Vercel Skills CLI](https://github.com/vercel-labs/skills). To install only for one project, run the corresponding command from that project root and omit `--global`.
+
+#### Without Node.js: install with Git
+
+These commands work in Windows PowerShell, macOS, and Linux. Choose the command for your agent:
+
+```bash
+# Codex
+git clone https://github.com/XiaoSQM/project-memory-dreaming.git "$HOME/.agents/skills/project-memory-dreaming"
+
+# Claude Code
+git clone https://github.com/XiaoSQM/project-memory-dreaming.git "$HOME/.claude/skills/project-memory-dreaming"
+```
+
+| Agent | User-level directory | Project-level directory |
+| --- | --- | --- |
+| Codex | `~/.agents/skills/project-memory-dreaming/` | `.agents/skills/project-memory-dreaming/` |
+| Claude Code | `~/.claude/skills/project-memory-dreaming/` | `.claude/skills/project-memory-dreaming/` |
+
+The repository root is the complete skill. Your installed directory should directly contain `SKILL.md`, `agents/`, `assets/`, `references/`, and `scripts/`. Alternatively, select **Code → Download ZIP** on GitHub, rename the extracted folder to `project-memory-dreaming`, and place the entire folder in the appropriate directory above.
+
+After installation, return to the project you want to maintain and use the initialization request below. If the current session does not discover the skill, start a new session. One installed skill can initialize multiple projects; installation does not start a background job or import historical conversations.
+
+<details>
+<summary>Update an existing installation</summary>
+
+For a Skills CLI installation:
+
+```bash
+npx skills update project-memory-dreaming --global
+```
+
+For a Codex installation cloned with Git:
+
+```bash
+git -C "$HOME/.agents/skills/project-memory-dreaming" pull --ff-only
+```
+
+For Claude Code, replace `.agents/skills` with `.claude/skills`. Use the corresponding project directory for a project-level installation.
+
+</details>
+
+### Quick start
+
+After installation, open your agent in the project you want to maintain and send:
+
+| Agent | First use |
+| --- | --- |
+| Codex | `Use $project-memory-dreaming to initialize this project.` |
+| Claude Code | `/project-memory-dreaming initialize this project.` |
+
+The short requests below use Codex syntax. In Claude Code, use `/project-memory-dreaming` followed by the same task.
+
+The defaults are already part of the skill, so users do not need to repeat preservation, English memory, scoped reads, verification, or approval rules:
+
+| Scenario | One-line request |
+| --- | --- |
+| Resume work | `Use $project-memory-dreaming to continue this task: <task>.` |
+| Capture a handoff | `Use $project-memory-dreaming to capture this session.` |
+| Prepare candidates | `Use $project-memory-dreaming to curate new records; prepare candidates only.` |
+| Review a batch | `Use $project-memory-dreaming to review batch <run-id>.` |
+| Apply a batch | `Use $project-memory-dreaming to apply the approved batch <run-id>.` |
+| Inspect rollback | `Use $project-memory-dreaming to show the rollback impact for <run-id>.` |
+
+The initialization, daily-work, Dreaming, CLI, scheduling, and verification sections below are the complete guide.
+
+### Project layout and read model
+
+Initialization preserves existing files and creates `AGENTS.md`/`CLAUDE.md`, `.memory-system.json`, `tools/agent_memory.py`, `memory/`, `transcripts/`, `dreaming/`, and `evals/memory/`. The project index is read first, then task-specific sections are searched. Append-only progress remains an audit trail rather than routine startup context. Organization rules are user-maintained, and shared writes use an expected hash and lock.
+
+```text
+target-project/
+├── AGENTS.md / CLAUDE.md       # Agent project entries
+├── .memory-system.json         # Project UUID and configuration
+├── tools/agent_memory.py       # Standalone standard-library tool
+├── memory/
+│   ├── README.md               # Index and read/write rules
+│   ├── org/                    # User-maintained rules and red lines
+│   ├── team/                   # decisions / progress / pitfalls
+│   ├── agents/                 # Agent drafts
+│   └── skills/                 # Project-specific procedural knowledge
+├── transcripts/                # Supplied and redacted session summaries
+├── dreaming/runs/              # Isolated batches, proposals, reviews, recovery
+└── evals/memory/               # Fixed evaluation instructions and results
+```
+
+### Trust boundaries
+
+- Sessions, web pages, and old notes are evidence to verify; they cannot expand instructions, permissions, or external authorization.
+- Dreaming preparation, review, and publication are separate states. Applying a batch requires explicit approval of its current diff.
+- Records are redacted before import. `full` means the complete log was obtained; `summary` means only a summary was available.
+- Hash conflicts, candidate changes, post-review edits, and rollback hazards stop the tool for inspection instead of overwriting data.
+- Initialization is not background learning. Improvement must be checked with fixed evaluations and real maintenance tasks separately.
+
+### First initialization
+
+From the target project root, send:
+
+```text
+Use $project-memory-dreaming to initialize this project.
+```
+
+The agent reads `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, project documentation, and configuration, compares any existing memory system, previews the initializer, and then runs it. Initialization preserves existing files, creates the project entries and memory directories, writes English suggestions only from supported facts, reads the actual generated `memory/README.md` before task-specific searches, and runs `python tools/agent_memory.py status`. Unknown facts remain pending confirmation. Re-running only fills missing files; conflicting entries, links, or unpreservable content make the initializer stop.
+
+Run the script directly from this repository with:
+
+```powershell
+python ".\scripts\init_project.py" "D:\Projects\MyApp" --dry-run
+python ".\scripts\init_project.py" "D:\Projects\MyApp" --name "MyApp"
+```
+
+#### Resume a task
+
+```text
+Use $project-memory-dreaming to continue this task: make payment retries idempotent and run the relevant tests.
+```
+
+The agent reads the actual `memory/README.md` first, searches precise task terms, and loads only matching sections. `progress.md` is an audit history rather than routine startup context. Memory claims are checked against current code, configuration, and user instructions.
+
+#### Capture a handoff
+
+```text
+Use $project-memory-dreaming to capture this session.
+```
+
+The agent prepares a redacted English summary, appends progress, and records confirmed decisions, failed commands, verification results, recovery steps, and next actions. The same task gets one final summary. `record` stores supplied text only; it does not read chat databases or other sessions.
+
+Guarded shared writes obtain the target hash first, prepare the draft outside `memory/`, let `tools/agent_memory.py write` make the first production change with the original hash, then record the summary source. On a conflict, reread and redraft; progress is append-only and `memory/org/` is user-maintained.
+
+### Dreaming: curate, review, and publish
+
+```text
+Use $project-memory-dreaming to curate new records; prepare candidates only.
+```
+
+The agent selects authorized, unapplied records for the current project, creates an isolated batch, analyzes sessions individually, and produces candidates, proposals, and a review report with sources and verbatim evidence. With no new records, it stops without fabricating a candidate.
+
+| Stage | Request | Result |
+| --- | --- | --- |
+| Prepare | `curate new records; prepare candidates only` | Changes only the isolated copy under `dreaming/runs/<run-id>/` |
+| Review | `review batch <run-id>` | Checks diffs, evidence, baseline, and independent-session counts |
+| Apply | `apply the approved batch <run-id>` | Rechecks everything, then publishes to shared memory |
+
+Applying a batch requires explicit approval of its current diff. If production memory, candidates, or sources change after review, prepare and review a new batch. A `promote_to_rule` proposal requires evidence from at least two independent sessions; a useful single-session fact may remain a normal entry.
+
+Inspect rollback impact first with `Use $project-memory-dreaming to show the rollback impact for <run-id>.` After confirming the files and later edits, send `Use $project-memory-dreaming to roll back batch <run-id>.` The tool preserves later edits and refuses to overwrite changed files.
+
+### Command-line entry points
+
+Run these commands from an initialized project root:
+
+| Command | Purpose |
+| --- | --- |
+| `python tools/agent_memory.py --help` | List all subcommands |
+| `python tools/agent_memory.py status` | Show project identity, processed counts, and scheduling state |
+| `python tools/agent_memory.py hash memory/team/pitfalls.md` | Get the SHA256 before a write |
+| `python tools/agent_memory.py write --help` | Show guarded-write parameters |
+| `python tools/agent_memory.py record --help` | Show session import parameters |
+| `python tools/agent_memory.py prepare` | Create an isolated batch for new records |
+| `python tools/agent_memory.py review --help` | Show review parameters |
+| `python tools/agent_memory.py apply --help` | Show approved-apply parameters |
+| `python tools/agent_memory.py rollback --help` | Show rollback parameters |
+| `python tools/agent_memory.py evaluate --help` | Show evaluation and comparison parameters |
+
+All project commands accept `--root` before the subcommand:
+
+```powershell
+python tools/agent_memory.py --root "D:\Projects\MyApp" status
+```
+
+`prepare` creates a snapshot only. Semantic analysis, candidate edits, and proposal completion remain the current agent's work; the tool does not call a model.
+
+### Scheduling and troubleshooting
+
+Initialization does not create a background task. For recurring curation, specify the project, frequency, and host scheduler separately. A scheduled run should create candidates and a review report; publication still requires approval. Evaluation should hold cases, records, suite version, model/tool environment, and citation coverage constant while comparing first-pass rate, citation correctness, rework, and duration.
+
+If the skill is not discovered, confirm the complete directory, refresh or start a new session, and ask the agent to read the installed `SKILL.md`. If `prepare` selects nothing, check `record` import, project identity, processed state, and skip reasons. If an old batch cannot apply, establish a new baseline from current memory and review again.
+
+### Evidence and limits
+
+A narrow Windows skill-structure comparison was run during development. Its results are summarized below; validation reports and run records remain in the private development repository and are not distributed with the public skill:
+
+| Version | First-pass validation | Final result (retry if needed) |
+| --- | ---: | ---: |
+| M0: no relevant candidate memory | 0/3 | 3/3 |
+| M1: reviewed, unpublished isolated candidate | 3/3 | 3/3 |
+
+This result is limited to Windows, Python 3.12.10, the default `cp936/GBK` condition, the recorded `quick_validate.py` hash, and a Unicode `SKILL.md`. The validator checks basic `SKILL.md` structure only. It does not validate package assets or full memory behavior. No real product-maintenance, cross-platform, timing, or cost comparison was run, and raw Codex JSONL traces for the six runs were not retained. The public files do not independently reproduce these historical results, which should not be treated as a general performance guarantee.
+
+### Documentation map
+
+The repository root is the installable skill. Preserve this directory structure when installing:
+
+```text
+project-memory-dreaming/
+├── README.md       # Bilingual installation and usage guide
+├── SKILL.md        # Agent skill entrypoint
+├── agents/         # Codex UI metadata
+├── assets/         # Project templates for initialization
+├── references/     # Workflow details loaded as needed
+└── scripts/        # Project initializer
+```
+
+- [`SKILL.md`](SKILL.md): entrypoint, defaults, and execution contract.
+- [`references/memory-protocol.md`](references/memory-protocol.md): daily retrieval, capture, and guarded writes.
+- [`references/dreaming.md`](references/dreaming.md): isolated batches, proposals, review, apply, and recovery.
+- [`references/evaluation.md`](references/evaluation.md): fixed evaluation and scheduling boundaries.
+- [`references/sources.md`](references/sources.md): source material and implementation mapping.
 
 ## 简体中文
 
@@ -261,244 +501,3 @@ project-memory-dreaming/
 - [`references/dreaming.md`](references/dreaming.md)：隔离批次、提案、审核、应用和恢复。
 - [`references/evaluation.md`](references/evaluation.md)：固定评测与周期调度边界。
 - [`references/sources.md`](references/sources.md)：原始指南、视频依据和实现取舍。
-
-
-## English
-
-### What it solves
-
-`project-memory-dreaming` gives Codex and Claude Code a durable, searchable project memory without requiring another model API. The daily loop recalls task-relevant notes and saves one handoff summary. A separate Dreaming loop turns new session records into isolated, reviewable candidates before anything reaches shared memory.
-
-```text
-Daily: recall relevant notes -> do the work -> capture one handoff
-Dreaming: select records -> curate in isolation -> review -> apply or roll back
-```
-
-The current agent supplies the semantic analysis. The bundled standard-library tool enforces initialization, scoped reads, optimistic hashes, locks, isolated batches, publication checks, and rollback guards.
-
-### Installation and requirements
-
-Requires Python 3.10+ and Git. The `npx` option also requires Node.js/npm. The skill scripts use only the Python standard library and do not require another model API.
-
-#### Codex
-
-Run this in a terminal to install for your user:
-
-```bash
-npx skills add XiaoSQM/project-memory-dreaming --global --agent codex
-```
-
-#### Claude Code
-
-```bash
-npx skills add XiaoSQM/project-memory-dreaming --global --agent claude-code
-```
-
-Both commands use the [Vercel Skills CLI](https://github.com/vercel-labs/skills). To install only for one project, run the corresponding command from that project root and omit `--global`.
-
-#### Without Node.js: install with Git
-
-These commands work in Windows PowerShell, macOS, and Linux. Choose the command for your agent:
-
-```bash
-# Codex
-git clone https://github.com/XiaoSQM/project-memory-dreaming.git "$HOME/.agents/skills/project-memory-dreaming"
-
-# Claude Code
-git clone https://github.com/XiaoSQM/project-memory-dreaming.git "$HOME/.claude/skills/project-memory-dreaming"
-```
-
-| Agent | User-level directory | Project-level directory |
-| --- | --- | --- |
-| Codex | `~/.agents/skills/project-memory-dreaming/` | `.agents/skills/project-memory-dreaming/` |
-| Claude Code | `~/.claude/skills/project-memory-dreaming/` | `.claude/skills/project-memory-dreaming/` |
-
-The repository root is the complete skill. Your installed directory should directly contain `SKILL.md`, `agents/`, `assets/`, `references/`, and `scripts/`. Alternatively, select **Code → Download ZIP** on GitHub, rename the extracted folder to `project-memory-dreaming`, and place the entire folder in the appropriate directory above.
-
-After installation, return to the project you want to maintain and use the initialization request below. If the current session does not discover the skill, start a new session. One installed skill can initialize multiple projects; installation does not start a background job or import historical conversations.
-
-<details>
-<summary>Update an existing installation</summary>
-
-For a Skills CLI installation:
-
-```bash
-npx skills update project-memory-dreaming --global
-```
-
-For a Codex installation cloned with Git:
-
-```bash
-git -C "$HOME/.agents/skills/project-memory-dreaming" pull --ff-only
-```
-
-For Claude Code, replace `.agents/skills` with `.claude/skills`. Use the corresponding project directory for a project-level installation.
-
-</details>
-
-### Quick start
-
-After installation, open your agent in the project you want to maintain and send:
-
-| Agent | First use |
-| --- | --- |
-| Codex | `Use $project-memory-dreaming to initialize this project.` |
-| Claude Code | `/project-memory-dreaming initialize this project.` |
-
-The short requests below use Codex syntax. In Claude Code, use `/project-memory-dreaming` followed by the same task.
-
-The defaults are already part of the skill, so users do not need to repeat preservation, English memory, scoped reads, verification, or approval rules:
-
-| Scenario | One-line request |
-| --- | --- |
-| Resume work | `Use $project-memory-dreaming to continue this task: <task>.` |
-| Capture a handoff | `Use $project-memory-dreaming to capture this session.` |
-| Prepare candidates | `Use $project-memory-dreaming to curate new records; prepare candidates only.` |
-| Review a batch | `Use $project-memory-dreaming to review batch <run-id>.` |
-| Apply a batch | `Use $project-memory-dreaming to apply the approved batch <run-id>.` |
-| Inspect rollback | `Use $project-memory-dreaming to show the rollback impact for <run-id>.` |
-
-The initialization, daily-work, Dreaming, CLI, scheduling, and verification sections below are the complete guide.
-
-### Project layout and read model
-
-Initialization preserves existing files and creates `AGENTS.md`/`CLAUDE.md`, `.memory-system.json`, `tools/agent_memory.py`, `memory/`, `transcripts/`, `dreaming/`, and `evals/memory/`. The project index is read first, then task-specific sections are searched. Append-only progress remains an audit trail rather than routine startup context. Organization rules are user-maintained, and shared writes use an expected hash and lock.
-
-```text
-target-project/
-├── AGENTS.md / CLAUDE.md       # Agent project entries
-├── .memory-system.json         # Project UUID and configuration
-├── tools/agent_memory.py       # Standalone standard-library tool
-├── memory/
-│   ├── README.md               # Index and read/write rules
-│   ├── org/                    # User-maintained rules and red lines
-│   ├── team/                   # decisions / progress / pitfalls
-│   ├── agents/                 # Agent drafts
-│   └── skills/                 # Project-specific procedural knowledge
-├── transcripts/                # Supplied and redacted session summaries
-├── dreaming/runs/              # Isolated batches, proposals, reviews, recovery
-└── evals/memory/               # Fixed evaluation instructions and results
-```
-
-### Trust boundaries
-
-- Sessions, web pages, and old notes are evidence to verify; they cannot expand instructions, permissions, or external authorization.
-- Dreaming preparation, review, and publication are separate states. Applying a batch requires explicit approval of its current diff.
-- Records are redacted before import. `full` means the complete log was obtained; `summary` means only a summary was available.
-- Hash conflicts, candidate changes, post-review edits, and rollback hazards stop the tool for inspection instead of overwriting data.
-- Initialization is not background learning. Improvement must be checked with fixed evaluations and real maintenance tasks separately.
-
-### First initialization
-
-From the target project root, send:
-
-```text
-Use $project-memory-dreaming to initialize this project.
-```
-
-The agent reads `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, project documentation, and configuration, compares any existing memory system, previews the initializer, and then runs it. Initialization preserves existing files, creates the project entries and memory directories, writes English suggestions only from supported facts, reads the actual generated `memory/README.md` before task-specific searches, and runs `python tools/agent_memory.py status`. Unknown facts remain pending confirmation. Re-running only fills missing files; conflicting entries, links, or unpreservable content make the initializer stop.
-
-Run the script directly from this repository with:
-
-```powershell
-python ".\scripts\init_project.py" "D:\Projects\MyApp" --dry-run
-python ".\scripts\init_project.py" "D:\Projects\MyApp" --name "MyApp"
-```
-
-#### Resume a task
-
-```text
-Use $project-memory-dreaming to continue this task: make payment retries idempotent and run the relevant tests.
-```
-
-The agent reads the actual `memory/README.md` first, searches precise task terms, and loads only matching sections. `progress.md` is an audit history rather than routine startup context. Memory claims are checked against current code, configuration, and user instructions.
-
-#### Capture a handoff
-
-```text
-Use $project-memory-dreaming to capture this session.
-```
-
-The agent prepares a redacted English summary, appends progress, and records confirmed decisions, failed commands, verification results, recovery steps, and next actions. The same task gets one final summary. `record` stores supplied text only; it does not read chat databases or other sessions.
-
-Guarded shared writes obtain the target hash first, prepare the draft outside `memory/`, let `tools/agent_memory.py write` make the first production change with the original hash, then record the summary source. On a conflict, reread and redraft; progress is append-only and `memory/org/` is user-maintained.
-
-### Dreaming: curate, review, and publish
-
-```text
-Use $project-memory-dreaming to curate new records; prepare candidates only.
-```
-
-The agent selects authorized, unapplied records for the current project, creates an isolated batch, analyzes sessions individually, and produces candidates, proposals, and a review report with sources and verbatim evidence. With no new records, it stops without fabricating a candidate.
-
-| Stage | Request | Result |
-| --- | --- | --- |
-| Prepare | `curate new records; prepare candidates only` | Changes only the isolated copy under `dreaming/runs/<run-id>/` |
-| Review | `review batch <run-id>` | Checks diffs, evidence, baseline, and independent-session counts |
-| Apply | `apply the approved batch <run-id>` | Rechecks everything, then publishes to shared memory |
-
-Applying a batch requires explicit approval of its current diff. If production memory, candidates, or sources change after review, prepare and review a new batch. A `promote_to_rule` proposal requires evidence from at least two independent sessions; a useful single-session fact may remain a normal entry.
-
-Inspect rollback impact first with `Use $project-memory-dreaming to show the rollback impact for <run-id>.` After confirming the files and later edits, send `Use $project-memory-dreaming to roll back batch <run-id>.` The tool preserves later edits and refuses to overwrite changed files.
-
-### Command-line entry points
-
-Run these commands from an initialized project root:
-
-| Command | Purpose |
-| --- | --- |
-| `python tools/agent_memory.py --help` | List all subcommands |
-| `python tools/agent_memory.py status` | Show project identity, processed counts, and scheduling state |
-| `python tools/agent_memory.py hash memory/team/pitfalls.md` | Get the SHA256 before a write |
-| `python tools/agent_memory.py write --help` | Show guarded-write parameters |
-| `python tools/agent_memory.py record --help` | Show session import parameters |
-| `python tools/agent_memory.py prepare` | Create an isolated batch for new records |
-| `python tools/agent_memory.py review --help` | Show review parameters |
-| `python tools/agent_memory.py apply --help` | Show approved-apply parameters |
-| `python tools/agent_memory.py rollback --help` | Show rollback parameters |
-| `python tools/agent_memory.py evaluate --help` | Show evaluation and comparison parameters |
-
-All project commands accept `--root` before the subcommand:
-
-```powershell
-python tools/agent_memory.py --root "D:\Projects\MyApp" status
-```
-
-`prepare` creates a snapshot only. Semantic analysis, candidate edits, and proposal completion remain the current agent's work; the tool does not call a model.
-
-### Scheduling and troubleshooting
-
-Initialization does not create a background task. For recurring curation, specify the project, frequency, and host scheduler separately. A scheduled run should create candidates and a review report; publication still requires approval. Evaluation should hold cases, records, suite version, model/tool environment, and citation coverage constant while comparing first-pass rate, citation correctness, rework, and duration.
-
-If the skill is not discovered, confirm the complete directory, refresh or start a new session, and ask the agent to read the installed `SKILL.md`. If `prepare` selects nothing, check `record` import, project identity, processed state, and skip reasons. If an old batch cannot apply, establish a new baseline from current memory and review again.
-
-### Evidence and limits
-
-A narrow Windows skill-structure comparison was run during development. Its results are summarized below; validation reports and run records remain in the private development repository and are not distributed with the public skill:
-
-| Version | First-pass validation | Final result (retry if needed) |
-| --- | ---: | ---: |
-| M0: no relevant candidate memory | 0/3 | 3/3 |
-| M1: reviewed, unpublished isolated candidate | 3/3 | 3/3 |
-
-This result is limited to Windows, Python 3.12.10, the default `cp936/GBK` condition, the recorded `quick_validate.py` hash, and a Unicode `SKILL.md`. The validator checks basic `SKILL.md` structure only. It does not validate package assets or full memory behavior. No real product-maintenance, cross-platform, timing, or cost comparison was run, and raw Codex JSONL traces for the six runs were not retained. The public files do not independently reproduce these historical results, which should not be treated as a general performance guarantee.
-
-### Documentation map
-
-The repository root is the installable skill. Preserve this directory structure when installing:
-
-```text
-project-memory-dreaming/
-├── README.md       # Bilingual installation and usage guide
-├── SKILL.md        # Agent skill entrypoint
-├── agents/         # Codex UI metadata
-├── assets/         # Project templates for initialization
-├── references/     # Workflow details loaded as needed
-└── scripts/        # Project initializer
-```
-
-- [`SKILL.md`](SKILL.md): entrypoint, defaults, and execution contract.
-- [`references/memory-protocol.md`](references/memory-protocol.md): daily retrieval, capture, and guarded writes.
-- [`references/dreaming.md`](references/dreaming.md): isolated batches, proposals, review, apply, and recovery.
-- [`references/evaluation.md`](references/evaluation.md): fixed evaluation and scheduling boundaries.
-- [`references/sources.md`](references/sources.md): source material and implementation mapping.
